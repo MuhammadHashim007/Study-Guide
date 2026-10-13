@@ -8,7 +8,7 @@ A Streamlit study workspace for university students. Upload lecture slides, pape
 |---|---|
 | Summary & Study Guides | Executive summary, exam revision guide, or first-principles explainer |
 | Flashcard Studio | 5–50 cards, expandable review, spaced-repetition drill, Markdown and Anki/Quizlet (TSV) export |
-| Practice MCQ Exam | 3–25 questions, 3 difficulty levels, graded score card, rationale for every option |
+| Practice MCQ Exam | 3–25 questions, Beginner / Intermediate / Advanced levels, graded score card, rationale for every option |
 | Slide-to-Notes | Expands sparse slide bullets into textbook-style chapters with formulas and exam essay prompts |
 | Research Paper Analyzer | Research question, hypothesis, methodology, findings, critique, APA 7th and IEEE citations |
 | Term Project Builder | Architecture, four-phase milestones, deliverables checklist, tech stack, risks |
@@ -21,12 +21,12 @@ Every output can be downloaded as Markdown.
 
 Models are reached through OpenRouter using the standard `openai` SDK (`base_url="https://openrouter.ai/api/v1"`). Categories in the sidebar:
 
-- **Frontier Academic & Reasoning:** Claude 3.5 Sonnet, GPT-4o, DeepSeek R1, Gemini
+- **Frontier Academic & Reasoning:** Claude 3.5 Sonnet, GPT-4o, DeepSeek R1, Gemini 3.8 / 3.7 Flash
 - **Open-Weights Powerhouses:** Llama 3.3 70B, Qwen 2.5 72B, Mistral Large / Nemo
 - **Zero-Cost Free Auto-Router:** `openrouter/free`
-- **Direct Google AI Studio:** Gemini via your own Google key
+- **Direct Google AI Studio:** Gemini 3 Flash Preview, 3.1 Flash-Lite, 3.1 Pro Preview, 3.5 Flash / Flash-Lite, 3.6, 3.7 and 3.8 Flash via your own Google key
 
-Model IDs on OpenRouter change often, especially `:free` ones. If a model stops working, paste a current ID into **Custom model ID** in the sidebar. By default the app falls back to `openrouter/free` when a model fails and tells you which model actually answered.
+Model IDs on OpenRouter change often, especially `:free` ones. If a model stops working, paste a current ID into **Custom model ID** in the sidebar. By default the app falls back when a model fails or you have no key for its provider: first to `openrouter/free`, then to Gemini 3.5 Flash, using whichever keys you have. It tells you which model actually answered. Untick the fallback box in the sidebar to disable this.
 
 ## Quick start (local)
 
