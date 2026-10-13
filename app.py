@@ -23,6 +23,7 @@ APP_TITLE = "OmniStudy AI - University Academic & Research Suite"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 FREE_ROUTER = "openrouter/free"
+GOOGLE_FALLBACK_MODEL = "gemini-3.5-flash"
 LETTERS = "ABCDEF"
 WORDS_PER_MINUTE = 238
 
@@ -57,18 +58,18 @@ MODEL_CATALOG = {
             "note": "Same reasoning model on free capacity. Slow, rate-limited.",
         },
         {
-            "label": "Google: Gemini Pro 1.5",
-            "id": "google/gemini-pro-1.5",
+            "label": "Google: Gemini 3.8 Flash",
+            "id": "google/gemini-3.8-flash",
             "provider": "openrouter",
             "tier": "Paid",
-            "note": "Very large context window for textbooks and slide sets.",
+            "note": "Latest Gemini Flash. 1M-token context for textbooks and slide sets. Strong multi-step reasoning.",
         },
         {
-            "label": "Google: Gemini 2.0 Flash Exp (free)",
-            "id": "google/gemini-2.0-flash-exp:free",
+            "label": "Google: Gemini 3.7 Flash",
+            "id": "google/gemini-3.7-flash",
             "provider": "openrouter",
-            "tier": "Free",
-            "note": "Large context on free capacity. Experimental endpoints get retired often.",
+            "tier": "Paid",
+            "note": "Previous Flash generation, cheaper to run. ID follows OpenRouter's naming pattern; use Custom model ID if it 404s.",
         },
     ],
     "Open-Weights Powerhouses": [
@@ -126,18 +127,60 @@ MODEL_CATALOG = {
     ],
     "Direct Google AI Studio (own key)": [
         {
-            "label": "Google: Gemini 2.5 Flash (direct)",
-            "id": "gemini-2.5-flash",
+            "label": "Google: Gemini 3.8 Flash (direct)",
+            "id": "gemini-3.8-flash",
             "provider": "google",
-            "tier": "Free tier",
-            "note": "Uses your Google AI Studio key directly. Large context, generous free quota.",
+            "tier": "Check quota",
+            "note": "Newest Flash. 1M-token context. Short-lived release: Google may retire it sooner than the stable models.",
         },
         {
-            "label": "Google: Gemini 2.5 Pro (direct)",
-            "id": "gemini-2.5-pro",
+            "label": "Google: Gemini 3.7 Flash (direct)",
+            "id": "gemini-3.7-flash",
             "provider": "google",
-            "tier": "Limited",
-            "note": "Strongest Gemini. Free-tier access is tight or absent, check your quota.",
+            "tier": "Check quota",
+            "note": "Short-lived release: Google may retire it sooner than the stable models.",
+        },
+        {
+            "label": "Google: Gemini 3.6 Flash (direct)",
+            "id": "gemini-3.6-flash",
+            "provider": "google",
+            "tier": "Check quota",
+            "note": "Short-lived release: Google may retire it sooner than the stable models.",
+        },
+        {
+            "label": "Google: Gemini 3.5 Flash (direct)",
+            "id": "gemini-3.5-flash",
+            "provider": "google",
+            "tier": "Check quota",
+            "note": "Stable release, guaranteed available until at least May 2027. Best default for direct use.",
+        },
+        {
+            "label": "Google: Gemini 3.5 Flash-Lite (direct)",
+            "id": "gemini-3.5-flash-lite",
+            "provider": "google",
+            "tier": "Check quota",
+            "note": "Stable, cheapest and fastest of the 3.5 line. Weaker on complex reasoning.",
+        },
+        {
+            "label": "Google: Gemini 3.1 Pro Preview (direct)",
+            "id": "gemini-3.1-pro-preview",
+            "provider": "google",
+            "tier": "Check quota",
+            "note": "Only Pro-tier model in the 3.x line. Best for dense papers and hard STEM. Preview, and free-tier access is unlikely.",
+        },
+        {
+            "label": "Google: Gemini 3.1 Flash-Lite (direct)",
+            "id": "gemini-3.1-flash-lite",
+            "provider": "google",
+            "tier": "Check quota",
+            "note": "Stable, lightweight, for quick summaries and flashcards.",
+        },
+        {
+            "label": "Google: Gemini 3 Flash Preview (direct)",
+            "id": "gemini-3-flash-preview",
+            "provider": "google",
+            "tier": "Check quota",
+            "note": "First Gemini 3 Flash. Preview release.",
         },
     ],
 }
@@ -173,9 +216,23 @@ SUMMARY_FORMATS = {
 }
 
 QUIZ_DIFFICULTY = {
-    "Undergraduate Exam": "standard undergraduate exam level: application of concepts, not just recall",
-    "Graduate/Complex": "graduate level: multi-step reasoning, edge cases, subtle distractors and synthesis across topics",
-    "Foundational": "foundational level: core definitions and basic concept recognition",
+    "Beginner Level": (
+        "BEGINNER level. Test recall and recognition of core definitions, terms, facts and basic "
+        "relationships. Use plain, direct wording and single-step questions. Distractors should be clearly "
+        "distinguishable from the correct answer to someone who studied the basics. No calculations beyond "
+        "one trivial step and no multi-concept scenarios."
+    ),
+    "Intermediate Level": (
+        "INTERMEDIATE level. Test understanding and application: short scenarios, comparing or "
+        "contrasting concepts, explaining why something happens, and calculations of two or three steps. "
+        "Distractors should reflect common student misconceptions and partial understanding."
+    ),
+    "Advanced Level": (
+        "ADVANCED level. Test analysis, evaluation and synthesis: multi-step reasoning, edge cases and "
+        "exceptions, integrating several concepts in one question, interpreting unfamiliar scenarios, and "
+        "multi-step calculations. Every distractor must be tempting, for example true in a different "
+        "context or the result of one plausible reasoning error. Do not ask for simple recall."
+    ),
 }
 
 PROJECT_TIMELINES = [
@@ -204,7 +261,8 @@ class ModelConfig:
     provider: str
     model: str
     label: str
-    api_key: str
+    openrouter_key: str
+    google_key: str
     fallback: bool
 
 
@@ -353,11 +411,11 @@ def prepare_source(text, max_chars):
     return Source(cut, words, chars, True)
 
 
-def build_client(cfg):
-    if cfg.provider == "google":
-        return OpenAI(api_key=cfg.api_key, base_url=GOOGLE_BASE_URL, timeout=180, max_retries=1)
+def build_client(provider, api_key):
+    if provider == "google":
+        return OpenAI(api_key=api_key, base_url=GOOGLE_BASE_URL, timeout=180, max_retries=1)
     return OpenAI(
-        api_key=cfg.api_key,
+        api_key=api_key,
         base_url=OPENROUTER_BASE_URL,
         timeout=180,
         max_retries=1,
@@ -379,18 +437,39 @@ def message_text(response):
     return strip_reasoning(content).strip()
 
 
+def build_candidates(cfg):
+    keys = {"openrouter": cfg.openrouter_key, "google": cfg.google_key}
+    plan = [(cfg.provider, cfg.model)]
+    if cfg.fallback:
+        plan.append(("openrouter", FREE_ROUTER))
+        plan.append(("google", GOOGLE_FALLBACK_MODEL))
+    candidates = []
+    for provider, model in plan:
+        if keys[provider] and (provider, model) not in candidates:
+            candidates.append((provider, model))
+    return candidates
+
+
 def call_llm(cfg, system, user, temperature=0.3, max_tokens=4096):
-    if not cfg.api_key:
+    candidates = build_candidates(cfg)
+    if not candidates:
+        if not cfg.openrouter_key and not cfg.google_key:
+            raise LLMError(
+                "No API key found. Add OPENROUTER_API_KEY and/or GOOGLE_API_KEY to Streamlit Secrets, "
+                "or paste a key in the sidebar."
+            )
+        needed = "Google AI Studio" if cfg.provider == "google" else "OpenRouter"
         raise LLMError(
-            "No API key found. Add OPENROUTER_API_KEY (or GOOGLE_API_KEY for direct Gemini) "
-            "to Streamlit Secrets, or paste a key in the sidebar."
+            f"No {needed} key for the selected model. Add that key, or enable auto-fallback in the sidebar "
+            "to use the provider you do have a key for."
         )
-    client = build_client(cfg)
-    candidates = [cfg.model]
-    if cfg.provider == "openrouter" and cfg.fallback and cfg.model != FREE_ROUTER:
-        candidates.append(FREE_ROUTER)
+    keys = {"openrouter": cfg.openrouter_key, "google": cfg.google_key}
+    rejected = set()
     last_error = None
-    for model in candidates:
+    for provider, model in candidates:
+        if provider in rejected:
+            continue
+        client = build_client(provider, keys[provider])
         for attempt in range(2):
             try:
                 response = client.chat.completions.create(
@@ -408,11 +487,14 @@ def call_llm(cfg, system, user, temperature=0.3, max_tokens=4096):
                 last_error = LLMError(f"Model '{model}' returned an empty response.")
                 break
             except AuthenticationError:
-                raise LLMError("HTTP 401: the API key was rejected. Check the key and that it belongs to the selected provider.")
+                name = "Google AI Studio" if provider == "google" else "OpenRouter"
+                last_error = LLMError(f"HTTP 401: the {name} API key was rejected. Check the key.")
+                rejected.add(provider)
+                break
             except RateLimitError as exc:
                 last_error = LLMError(
                     f"HTTP 429: rate limit or quota reached for '{model}'. Free models are throttled "
-                    f"heavily; wait a minute, pick another model, or use the Auto-Router. ({error_detail(exc)})"
+                    f"heavily; wait a minute or pick another model. ({error_detail(exc)})"
                 )
                 if attempt == 0:
                     time.sleep(4)
@@ -660,12 +742,30 @@ def render_sidebar():
     google_input = st.sidebar.text_input("Google AI Studio API Key (optional)", type="password")
     openrouter_key = openrouter_input.strip() or get_secret("OPENROUTER_API_KEY")
     google_key = google_input.strip() or get_secret("GOOGLE_API_KEY")
-    api_key = google_key if provider == "google" else openrouter_key
+    fallback = st.sidebar.checkbox(
+        "Auto-fallback to another model or provider",
+        value=True,
+        help=(
+            "If the selected model fails, or you have no key for its provider, the app tries the free "
+            f"OpenRouter router and Google {GOOGLE_FALLBACK_MODEL}, using whichever keys you have. "
+            "A different model answers, and the result is labelled. Your text is sent to whichever "
+            "provider answers."
+        ),
+    )
+    own_key = google_key if provider == "google" else openrouter_key
     needed = "Google AI Studio" if provider == "google" else "OpenRouter"
-    if api_key:
+    other_name = "OpenRouter" if provider == "google" else "Google AI Studio"
+    other_key = openrouter_key if provider == "google" else google_key
+    other_target = FREE_ROUTER if provider == "google" else GOOGLE_FALLBACK_MODEL
+    if own_key:
         st.sidebar.success(f"{needed} key loaded")
+    elif fallback and other_key:
+        st.sidebar.warning(
+            f"No {needed} key. Requests will fall back to {other_name} (`{other_target}`), "
+            "not the model you selected."
+        )
     else:
-        st.sidebar.warning(f"No {needed} key found")
+        st.sidebar.error(f"No {needed} key found")
 
     st.sidebar.subheader("Advanced")
     max_chars = st.sidebar.slider(
@@ -676,17 +776,11 @@ def render_sidebar():
         step=10000,
         help="About 4 characters per token. Free models often cap context well below 128k tokens.",
     )
-    fallback = True
-    if provider == "openrouter" and model != FREE_ROUTER:
-        fallback = st.sidebar.checkbox(
-            "Fall back to the free Auto-Router if the model fails",
-            value=True,
-            help="Triggers on 402, 404, 429 and server errors. The result is labelled with the model that actually answered.",
-        )
     st.sidebar.caption(
         "Free OpenRouter endpoints may log prompts. Do not upload confidential or unpublished research to them."
     )
-    return ModelConfig(provider, model, label, api_key, fallback), max_chars
+    config = ModelConfig(provider, model, label, openrouter_key, google_key, fallback)
+    return config, max_chars
 
 
 def render_ingestion(max_chars):
@@ -762,7 +856,7 @@ def show_text_result(state_key, title, filename_stub, button_key):
     if not result:
         return
     if result["model"] != result["requested"]:
-        st.info(f"The requested model failed, so `{result['model']}` answered instead.")
+        st.info(f"The requested model was unavailable (failed or no key), so `{result['model']}` answered instead.")
     st.markdown(result["text"])
     st.download_button(
         "⬇️ Download as Markdown",
@@ -881,7 +975,7 @@ def render_flashcard_tab(cfg, source):
         return
     meta = st.session_state["cards_meta"]
     if meta["model"] != meta["requested"]:
-        st.info(f"The requested model failed, so `{meta['model']}` answered instead.")
+        st.info(f"The requested model was unavailable (failed or no key), so `{meta['model']}` answered instead.")
     st.markdown(f"#### Deck ({len(cards)} cards)")
     for number, card in enumerate(cards, start=1):
         topic = f" · {card['topic']}" if card["topic"] else ""
@@ -982,11 +1076,12 @@ def render_quiz_tab(cfg, source):
     st.markdown("Generate a practice exam, answer it, then get instant grading with rationales for every option.")
     col1, col2 = st.columns(2)
     count = col1.slider("Number of questions", 3, 25, 5, key="quiz_count")
-    difficulty = col2.selectbox("Difficulty", list(QUIZ_DIFFICULTY.keys()), key="quiz_difficulty")
+    difficulty = col2.selectbox("Difficulty level", list(QUIZ_DIFFICULTY.keys()), index=1, key="quiz_difficulty")
     if st.button("Generate exam", type="primary", key="quiz_go"):
         if ensure_ready(source):
             task = (
-                f"Create exactly {count} multiple-choice questions at {QUIZ_DIFFICULTY[difficulty]}.\n"
+                f"Create exactly {count} multiple-choice questions. Difficulty: {QUIZ_DIFFICULTY[difficulty]}\n"
+                "Every question must match this level; do not mix levels.\n"
                 "Rules:\n"
                 "- Each question has exactly 4 options written as plain text with no letter prefixes.\n"
                 "- Exactly one option is correct. Distractors must be plausible and based on real misconceptions.\n"
@@ -1025,7 +1120,7 @@ def render_quiz_tab(cfg, source):
                         )
                     clear_quiz_widgets()
                     st.session_state["quiz"] = quiz
-                    st.session_state["quiz_meta"] = {"model": used, "requested": cfg.model}
+                    st.session_state["quiz_meta"] = {"model": used, "requested": cfg.model, "difficulty": difficulty}
                     st.session_state["quiz_submitted"] = False
                     st.session_state["quiz_answers"] = None
     quiz = st.session_state.get("quiz")
@@ -1033,7 +1128,8 @@ def render_quiz_tab(cfg, source):
         return
     meta = st.session_state["quiz_meta"]
     if meta["model"] != meta["requested"]:
-        st.info(f"The requested model failed, so `{meta['model']}` answered instead.")
+        st.info(f"The requested model was unavailable (failed or no key), so `{meta['model']}` answered instead.")
+    st.caption(f"Difficulty: {meta.get('difficulty', 'n/a')}")
     if st.session_state["quiz_submitted"] and st.session_state["quiz_answers"] is not None:
         render_quiz_results(quiz)
         return
